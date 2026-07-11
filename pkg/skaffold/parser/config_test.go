@@ -20,6 +20,7 @@ package parser
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -27,6 +28,7 @@ import (
 
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/config"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/parser/configlocations"
+	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/schema/latest"
 	"github.com/GoogleContainerTools/skaffold/v2/testutil"
 )
 
@@ -1342,6 +1344,49 @@ requires:
 	}
 }
 */
+
+func TestGetConfigSetRequiredConfigIDs(t *testing.T) {
+	tmp := testutil.NewTempDir(t).WriteFiles(map[string]string{
+		"skaffold.yaml": graphTestConfig("root", `requires:
+- path: b
+- path: c
+- path: b
+`),
+		"b/skaffold.yaml": graphTestConfig("b", `requires:
+- path: ../d
+`),
+		"c/skaffold.yaml": graphTestConfig("c", `requires:
+- path: ../d
+`),
+		"d/skaffold.yaml": graphTestConfig("d", ""),
+	})
+	configs, err := GetConfigSet(context.Background(), config.SkaffoldOptions{
+		ConfigurationFile:  tmp.Path("skaffold.yaml"),
+		SkipConfigDefaults: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dependencies := map[string][]ConfigID{}
+	for _, entry := range configs {
+		dependencies[entry.Metadata.Name] = entry.RequiredConfigIDs
+	}
+	testutil.CheckDeepEqual(t, map[string][]ConfigID{
+		"d":    nil,
+		"b":    {{SourceFile: tmp.Path("d/skaffold.yaml")}},
+		"c":    {{SourceFile: tmp.Path("d/skaffold.yaml")}},
+		"root": {{SourceFile: tmp.Path("b/skaffold.yaml")}, {SourceFile: tmp.Path("c/skaffold.yaml")}},
+	}, dependencies)
+}
+
+func graphTestConfig(name, requires string) string {
+	metadata := ""
+	if name != "" {
+		metadata = fmt.Sprintf("metadata:\n  name: %s\n", name)
+	}
+	return fmt.Sprintf("apiVersion: %s\nkind: Config\n%s%s", latest.Version, metadata, requires)
+}
 
 var testSkaffoldYaml = `apiVersion: skaffold/v3alpha1
 kind: Config

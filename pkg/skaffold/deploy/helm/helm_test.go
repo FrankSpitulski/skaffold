@@ -55,6 +55,22 @@ var testBuilds = []graph.Artifact{{
 	Tag:       "docker.io:5000/skaffold-helm:3605e7bc17cf46e53f4d81c4cbc24e5b4c495184",
 }}
 
+func TestCreateOverridesFile(t *testing.T) {
+	first, err := createOverridesFile([]byte("first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(first)
+	second, err := createOverridesFile([]byte("second"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(second)
+	if first == second {
+		t.Fatalf("override paths must be unique: %q", first)
+	}
+}
+
 var testDeployConfig = latest.LegacyHelmDeploy{
 	Releases: []latest.HelmRelease{{
 		Name:      "skaffold-helm",
@@ -1098,6 +1114,10 @@ func TestHelmDeploy(t *testing.T) {
 
 	for _, test := range tests {
 		testutil.Run(t, test.description, func(t *testutil.T) {
+			t.Override(&createOverridesFile, func(overrides []byte) (string, error) {
+				const name = "skaffold-overrides.yaml"
+				return name, os.WriteFile(name, overrides, 0600)
+			})
 			t.Override(&helm.WriteBuildArtifacts, func([]graph.Artifact) (string, func(), error) { return "TMPFILE", func() {}, nil })
 			t.Override(&client.Client, deployutil.MockK8sClient)
 			fakeWarner := &warnings.Collect{}
@@ -1204,6 +1224,10 @@ func TestHelmDeployConcurrently(t *testing.T) {
 	concurrencyCount := 3
 	for _, test := range tests {
 		testutil.Run(t, test.description, func(t *testutil.T) {
+			t.Override(&createOverridesFile, func(overrides []byte) (string, error) {
+				const name = "skaffold-overrides.yaml"
+				return name, os.WriteFile(name, overrides, 0600)
+			})
 			t.Override(&helm.WriteBuildArtifacts, func([]graph.Artifact) (string, func(), error) { return "TMPFILE", func() {}, nil })
 			t.Override(&client.Client, deployutil.MockK8sClient)
 			fakeWarner := &warnings.Collect{}

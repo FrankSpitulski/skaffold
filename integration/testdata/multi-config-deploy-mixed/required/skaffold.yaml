@@ -1,0 +1,14 @@
+apiVersion: skaffold/v4beta14
+kind: Config
+metadata:
+  name: kubectl-required
+manifests:
+  rawYaml:
+  - configmap.yaml
+deploy:
+  kubectl:
+    hooks:
+      after:
+      - host:
+          command: [sh, -c, 'touch "$DEPLOY_CONCURRENCY_TEST_DIR/required.done"']
+          os: [darwin, linux]

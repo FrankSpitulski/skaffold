@@ -87,7 +87,7 @@ func GetAllConfigs(ctx context.Context, opts config.SkaffoldOptions) ([]schemaUt
 func GetConfigSet(ctx context.Context, opts config.SkaffoldOptions) (SkaffoldConfigSet, error) {
 	cOpts := configOpts{file: opts.ConfigurationFile, selection: nil, profiles: opts.Profiles, isRequired: false, isDependency: false, isRemote: false}
 	r := newRecord()
-	cfgs, fieldsOverrodeByProfile, err := getConfigs(ctx, cOpts, opts, r)
+	cfgs, _, fieldsOverrodeByProfile, err := getConfigs(ctx, cOpts, opts, r)
 	if err != nil {
 		return nil, err
 	}
@@ -114,15 +114,15 @@ func GetConfigSet(ctx context.Context, opts config.SkaffoldOptions) (SkaffoldCon
 }
 
 // getConfigs recursively parses all configs and their dependencies in the specified `skaffold.yaml`
-func getConfigs(ctx context.Context, cfgOpts configOpts, opts config.SkaffoldOptions, r *record) (SkaffoldConfigSet, map[string]configlocations.YAMLOverrideInfo, error) {
+func getConfigs(ctx context.Context, cfgOpts configOpts, opts config.SkaffoldOptions, r *record) (SkaffoldConfigSet, []ConfigID, map[string]configlocations.YAMLOverrideInfo, error) {
 	fieldsOverrodeByProfile := map[string]configlocations.YAMLOverrideInfo{}
 
 	parsed, err := schema.ParseConfigAndUpgrade(cfgOpts.file)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil, sErrors.MainConfigFileNotFoundErr(cfgOpts.file, err)
+			return nil, nil, nil, sErrors.MainConfigFileNotFoundErr(cfgOpts.file, err)
 		}
-		return nil, nil, sErrors.ConfigParsingError(err)
+		return nil, nil, nil, sErrors.ConfigParsingError(err)
 	}
 
 	if !util.IsURL(cfgOpts.file) && !filepath.IsAbs(cfgOpts.file) && cfgOpts.file != "-" {
@@ -132,16 +132,20 @@ func getConfigs(ctx context.Context, cfgOpts configOpts, opts config.SkaffoldOpt
 	}
 
 	if len(parsed) == 0 {
-		return nil, nil, sErrors.ZeroConfigsParsedErr(cfgOpts.file)
+		return nil, nil, nil, sErrors.ZeroConfigsParsedErr(cfgOpts.file)
 	}
 	log.Entry(context.TODO()).Debugf("parsed %d configs from configuration file %s", len(parsed), cfgOpts.file)
 
 	// add profiles to record and validate that config names are unique if specified
 	seen := make(map[string]bool)
-	for _, cfg := range parsed {
+	var directIDs []ConfigID
+	for index, cfg := range parsed {
 		config, ok := cfg.(*latest.SkaffoldConfig)
 		if !ok {
-			return nil, nil, sErrors.SkaffoldConfigUpgradeErr(cfg.GetVersion(), latest.Version)
+			return nil, nil, nil, sErrors.SkaffoldConfigUpgradeErr(cfg.GetVersion(), latest.Version)
+		}
+		if len(cfgOpts.selection) == 0 || stringslice.Contains(cfgOpts.selection, config.Metadata.Name) {
+			directIDs = append(directIDs, ConfigID{SourceFile: cfgOpts.file, SourceIndex: index})
 		}
 
 		for _, profile := range config.Profiles {
@@ -155,7 +159,7 @@ func getConfigs(ctx context.Context, cfgOpts configOpts, opts config.SkaffoldOpt
 			continue
 		}
 		if seen[cfgName] {
-			return nil, nil, sErrors.DuplicateConfigNamesInSameFileErr(cfgName, cfgOpts.file)
+			return nil, nil, nil, sErrors.DuplicateConfigNamesInSameFileErr(cfgName, cfgOpts.file)
 		}
 		seen[cfgName] = true
 	}
@@ -164,16 +168,16 @@ func getConfigs(ctx context.Context, cfgOpts configOpts, opts config.SkaffoldOpt
 	for i, cfg := range parsed {
 		config, ok := cfg.(*latest.SkaffoldConfig)
 		if !ok {
-			return nil, nil, sErrors.SkaffoldConfigUpgradeErr(cfg.GetVersion(), latest.Version)
+			return nil, nil, nil, sErrors.SkaffoldConfigUpgradeErr(cfg.GetVersion(), latest.Version)
 		}
 
 		processed, err := processEachConfig(ctx, config, cfgOpts, opts, r, i, fieldsOverrodeByProfile)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		configs = append(configs, processed...)
 	}
-	return configs, fieldsOverrodeByProfile, nil
+	return configs, directIDs, fieldsOverrodeByProfile, nil
 }
 
 // processEachConfig processes each parsed config by applying profiles and recursively processing its dependencies.
@@ -226,6 +230,8 @@ func processEachConfig(ctx context.Context, config *latest.SkaffoldConfig, cfgOp
 	}
 
 	var configs SkaffoldConfigSet
+	var requiredConfigIDs []ConfigID
+	seenRequiredConfigIDs := make(map[ConfigID]bool)
 	for _, d := range config.Dependencies {
 		depProfiles := filterActiveProfiles(d, profiles)
 		if opts.PropagateProfiles {
@@ -238,20 +244,30 @@ func processEachConfig(ctx context.Context, config *latest.SkaffoldConfig, cfgOp
 		}
 		// These configOpts are overwritten by the processEachDependency function.
 		newOpts := configOpts{file: cfgOpts.file, profiles: depProfiles, isRequired: required, isDependency: cfgOpts.isDependency}
-		depConfigs, err := processEachDependency(ctx, d, newOpts, opts, r)
+		depConfigs, directIDs, err := processEachDependency(ctx, d, newOpts, opts, r)
 		if err != nil {
 			return nil, err
+		}
+		if required {
+			for _, id := range directIDs {
+				if seenRequiredConfigIDs[id] {
+					continue
+				}
+				seenRequiredConfigIDs[id] = true
+				requiredConfigIDs = append(requiredConfigIDs, id)
+			}
 		}
 		configs = append(configs, depConfigs...)
 	}
 
 	if required {
 		configs = append(configs, &SkaffoldConfigEntry{
-			SkaffoldConfig: config,
-			SourceFile:     cfgOpts.file,
-			SourceIndex:    index,
-			IsRootConfig:   !cfgOpts.isDependency,
-			IsRemote:       cfgOpts.isRemote,
+			SkaffoldConfig:    config,
+			SourceFile:        cfgOpts.file,
+			SourceIndex:       index,
+			RequiredConfigIDs: requiredConfigIDs,
+			IsRootConfig:      !cfgOpts.isDependency,
+			IsRemote:          cfgOpts.isRemote,
 		})
 	}
 	return configs, nil
@@ -276,7 +292,7 @@ func filterActiveProfiles(d latest.ConfigDependency, profiles []string) []string
 }
 
 // processEachDependency parses a config dependency with the calculated set of activated profiles.
-func processEachDependency(ctx context.Context, d latest.ConfigDependency, cfgOpts configOpts, opts config.SkaffoldOptions, r *record) (SkaffoldConfigSet, error) {
+func processEachDependency(ctx context.Context, d latest.ConfigDependency, cfgOpts configOpts, opts config.SkaffoldOptions, r *record) (SkaffoldConfigSet, []ConfigID, error) {
 	var repoInfo *git.Config
 	configFilePath := ""
 	path := makeConfigPathAbsolute(d.Path, cfgOpts.file)
@@ -295,7 +311,7 @@ func processEachDependency(ctx context.Context, d latest.ConfigDependency, cfgOp
 	if d.GoogleCloudBuildRepoV2 != nil {
 		repInf, err := gcbreposv2.GetRepoInfo(ctx, d.GoogleCloudBuildRepoV2.ProjectID, d.GoogleCloudBuildRepoV2.Region, d.GoogleCloudBuildRepoV2.Connection, d.GoogleCloudBuildRepoV2.Repo)
 		if err != nil {
-			return nil, sErrors.ConfigParsingError(fmt.Errorf("getting GCB repo info for %s: %w", d.GoogleCloudBuildRepoV2.Repo, err))
+			return nil, nil, sErrors.ConfigParsingError(fmt.Errorf("getting GCB repo info for %s: %w", d.GoogleCloudBuildRepoV2.Repo, err))
 		}
 		configFilePath = d.GoogleCloudBuildRepoV2.Path
 		repoInfo = &git.Config{
@@ -309,7 +325,7 @@ func processEachDependency(ctx context.Context, d latest.ConfigDependency, cfgOp
 	if repoInfo != nil {
 		cachePath, err := cacheRepo(ctx, *repoInfo, configFilePath, opts, r)
 		if err != nil {
-			return nil, sErrors.ConfigParsingError(fmt.Errorf("caching remote dependency %s: %w", repoInfo.Repo, err))
+			return nil, nil, sErrors.ConfigParsingError(fmt.Errorf("caching remote dependency %s: %w", repoInfo.Repo, err))
 		}
 		path = cachePath
 		isRemoteCfg = true
@@ -318,7 +334,7 @@ func processEachDependency(ctx context.Context, d latest.ConfigDependency, cfgOp
 	if d.GoogleCloudStorage != nil {
 		cachePath, err := cacheGCSObject(ctx, *d.GoogleCloudStorage, opts, r)
 		if err != nil {
-			return nil, sErrors.ConfigParsingError(fmt.Errorf("caching remote dependency %s: %w", d.GoogleCloudStorage.Path, err))
+			return nil, nil, sErrors.ConfigParsingError(fmt.Errorf("caching remote dependency %s: %w", d.GoogleCloudStorage.Path, err))
 		}
 		path = cachePath
 		isRemoteCfg = true
@@ -332,9 +348,9 @@ func processEachDependency(ctx context.Context, d latest.ConfigDependency, cfgOp
 		fi, err := os.Stat(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return nil, sErrors.DependencyConfigFileNotFoundErr(path, cfgOpts.file, err)
+				return nil, nil, sErrors.DependencyConfigFileNotFoundErr(path, cfgOpts.file, err)
 			}
-			return nil, sErrors.ConfigParsingError(fmt.Errorf("parsing dependencies for skaffold config %s: %w", cfgOpts.file, err))
+			return nil, nil, sErrors.ConfigParsingError(fmt.Errorf("parsing dependencies for skaffold config %s: %w", cfgOpts.file, err))
 		}
 		if fi.IsDir() {
 			path = filepath.Join(path, "skaffold.yaml")
@@ -347,11 +363,11 @@ func processEachDependency(ctx context.Context, d latest.ConfigDependency, cfgOp
 	cfgOpts.file = path
 	cfgOpts.selection = d.Names
 	cfgOpts.isRemote = isRemoteCfg
-	depConfigs, _, err := getConfigs(ctx, cfgOpts, opts, r)
+	depConfigs, directIDs, _, err := getConfigs(ctx, cfgOpts, opts, r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return depConfigs, nil
+	return depConfigs, directIDs, nil
 }
 
 // cacheRepo downloads the referenced git repository to skaffold's cache if required and returns the path to the target configuration file in that repository.

@@ -41,6 +41,8 @@ import (
 type DeployerMux struct {
 	iterativeStatusCheck bool
 	deployers            []Deployer
+	configs              []configDeployer
+	concurrency          int
 }
 
 type deployerWithHooks interface {
@@ -50,7 +52,12 @@ type deployerWithHooks interface {
 }
 
 func NewDeployerMux(deployers []Deployer, iterativeStatusCheck bool) Deployer {
-	return DeployerMux{deployers: deployers, iterativeStatusCheck: iterativeStatusCheck}
+	return DeployerMux{
+		iterativeStatusCheck: iterativeStatusCheck,
+		deployers:            deployers,
+		configs:              []configDeployer{{deployers: deployers}},
+		concurrency:          1,
+	}
 }
 
 func (m DeployerMux) GetDeployers() []Deployer {
@@ -115,10 +122,11 @@ func (m DeployerMux) ConfigName() string {
 	return ""
 }
 
-func (m DeployerMux) Deploy(ctx context.Context, w io.Writer, as []graph.Artifact, l manifest.ManifestListByConfig) error {
-	for i, deployer := range m.deployers {
-		eventV2.DeployInProgress(i)
-		w, ctx = output.WithEventContext(ctx, w, constants.Deploy, strconv.Itoa(i))
+func (m DeployerMux) deployConfig(ctx context.Context, w io.Writer, as []graph.Artifact, l manifest.ManifestListByConfig, config configDeployer) error {
+	for i, deployer := range config.deployers {
+		id := i + config.subtaskOffset
+		eventV2.DeployInProgress(id)
+		w, ctx = output.WithEventContext(ctx, w, constants.Deploy, strconv.Itoa(id))
 		ctx, endTrace := instrumentation.StartTrace(ctx, "Deploy")
 		runHooks := false
 		deployHooks, ok := deployer.(deployerWithHooks)
@@ -131,7 +139,7 @@ func (m DeployerMux) Deploy(ctx context.Context, w io.Writer, as []graph.Artifac
 			}
 		}
 		if err := deployer.Deploy(ctx, w, as, l); err != nil {
-			eventV2.DeployFailed(i, err)
+			eventV2.DeployFailed(id, err)
 			endTrace(instrumentation.TraceEndError(err))
 			return err
 		}
@@ -139,7 +147,7 @@ func (m DeployerMux) Deploy(ctx context.Context, w io.Writer, as []graph.Artifac
 		// This is required otherwise the deploy hooks can get erreneously executed on older pods from a previous deployment.
 		if runHooks || m.iterativeStatusCheck {
 			if err := deployer.GetStatusMonitor().Check(ctx, w); err != nil {
-				eventV2.DeployFailed(i, err)
+				eventV2.DeployFailed(id, err)
 				endTrace(instrumentation.TraceEndError(err))
 				return err
 			}
@@ -149,7 +157,7 @@ func (m DeployerMux) Deploy(ctx context.Context, w io.Writer, as []graph.Artifac
 				return err
 			}
 		}
-		eventV2.DeploySucceeded(i)
+		eventV2.DeploySucceeded(id)
 		endTrace()
 	}
 

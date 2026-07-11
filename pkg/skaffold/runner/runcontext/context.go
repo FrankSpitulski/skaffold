@@ -34,6 +34,9 @@ import (
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/util"
 )
 
+// ConfigDependencies maps each config index to the indexes of its direct prerequisites.
+type ConfigDependencies map[int][]int
+
 type RunContext struct {
 	Opts               config.SkaffoldOptions
 	Pipelines          Pipelines
@@ -51,6 +54,7 @@ type Pipelines struct {
 	pipelinesByConfig    map[string]latest.Pipeline
 	pipelinesByImageName map[string]latest.Pipeline
 	orderedConfigs       []string
+	configDependencies   ConfigDependencies
 }
 
 // All returns all config pipelines.
@@ -66,6 +70,11 @@ func (ps Pipelines) AllOrderedConfigNames() []string {
 // Returns a pipeline given its associated config name.
 func (ps Pipelines) GetForConfigName(configName string) latest.Pipeline {
 	return ps.pipelinesByConfig[configName]
+}
+
+// ConfigDependencies returns direct configuration prerequisites keyed by resolved config index.
+func (ps Pipelines) ConfigDependencies() ConfigDependencies {
+	return ps.configDependencies
 }
 
 // Head returns the first `latest.Pipeline`.
@@ -194,6 +203,10 @@ func (ps Pipelines) StatusCheckDeadlineSeconds() int {
 	return c
 }
 func NewPipelines(pipelinesByConfig map[string]latest.Pipeline, orderedConfigs []string) Pipelines {
+	return newPipelines(pipelinesByConfig, orderedConfigs, ConfigDependencies{})
+}
+
+func newPipelines(pipelinesByConfig map[string]latest.Pipeline, orderedConfigs []string, configDependencies ConfigDependencies) Pipelines {
 	m := make(map[string]latest.Pipeline)
 	var pipelines []latest.Pipeline
 
@@ -206,7 +219,7 @@ func NewPipelines(pipelinesByConfig map[string]latest.Pipeline, orderedConfigs [
 		pipelines = append(pipelines, p)
 	}
 
-	return Pipelines{pipelines: pipelines, pipelinesByImageName: m, pipelinesByConfig: pipelinesByConfig, orderedConfigs: orderedConfigs}
+	return Pipelines{pipelines: pipelines, pipelinesByImageName: m, pipelinesByConfig: pipelinesByConfig, orderedConfigs: orderedConfigs, configDependencies: configDependencies}
 }
 
 func (rc *RunContext) PipelineForImage(imageName string) (latest.Pipeline, bool) {
@@ -347,14 +360,20 @@ func (rc *RunContext) Trigger() string                               { return rc
 func (rc *RunContext) WaitForDeletions() config.WaitForDeletions     { return rc.Opts.WaitForDeletions }
 func (rc *RunContext) WatchPollInterval() int                        { return rc.Opts.WatchPollInterval }
 func (rc *RunContext) BuildConcurrency() int                         { return rc.Opts.BuildConcurrency }
-func (rc *RunContext) IsMultiConfig() bool                           { return rc.Pipelines.IsMultiPipeline() }
-func (rc *RunContext) IsDefaultKubeContext() bool                    { return rc.Opts.KubeContext == "" }
-func (rc *RunContext) GetRunID() string                              { return rc.RunID }
-func (rc *RunContext) RPCPort() *int                                 { return rc.Opts.RPCPort.Value() }
-func (rc *RunContext) RPCHTTPPort() *int                             { return rc.Opts.RPCHTTPPort.Value() }
-func (rc *RunContext) PushImages() config.BoolOrUndefined            { return rc.Opts.PushImages }
-func (rc *RunContext) TransformRulesFile() string                    { return rc.Opts.TransformRulesFile }
-func (rc *RunContext) VerifyDockerNetwork() string                   { return rc.Opts.VerifyDockerNetwork }
+func (rc *RunContext) DeployConcurrency() int {
+	if concurrency := rc.Opts.DeployConcurrency.Value(); concurrency != nil {
+		return *concurrency
+	}
+	return 1
+}
+func (rc *RunContext) IsMultiConfig() bool                { return rc.Pipelines.IsMultiPipeline() }
+func (rc *RunContext) IsDefaultKubeContext() bool         { return rc.Opts.KubeContext == "" }
+func (rc *RunContext) GetRunID() string                   { return rc.RunID }
+func (rc *RunContext) RPCPort() *int                      { return rc.Opts.RPCPort.Value() }
+func (rc *RunContext) RPCHTTPPort() *int                  { return rc.Opts.RPCHTTPPort.Value() }
+func (rc *RunContext) PushImages() config.BoolOrUndefined { return rc.Opts.PushImages }
+func (rc *RunContext) TransformRulesFile() string         { return rc.Opts.TransformRulesFile }
+func (rc *RunContext) VerifyDockerNetwork() string        { return rc.Opts.VerifyDockerNetwork }
 func (rc *RunContext) JSONParseConfig() latest.JSONParseConfig {
 	return rc.DefaultPipeline().Deploy.Logs.JSONParse
 }
@@ -387,13 +406,18 @@ func getConfigName(configName string) string {
 }
 
 func GetRunContext(ctx context.Context, opts config.SkaffoldOptions, configs []schemaUtil.VersionedConfig) (*RunContext, error) {
+	return GetRunContextWithConfigDependencies(ctx, opts, configs, nil)
+}
+
+// GetRunContextWithConfigDependencies builds a run context and preserves direct config prerequisites.
+func GetRunContextWithConfigDependencies(ctx context.Context, opts config.SkaffoldOptions, configs []schemaUtil.VersionedConfig, dependencies ConfigDependencies) (*RunContext, error) {
 	pipelines := make(map[string]latest.Pipeline)
 	var orderedConfigs []string
-
 	for _, cfg := range configs {
 		if cfg != nil {
-			pipeline := cfg.(*latest.SkaffoldConfig).Pipeline
-			cfgName := getConfigName(cfg.(*latest.SkaffoldConfig).Metadata.Name)
+			skaffoldConfig := cfg.(*latest.SkaffoldConfig)
+			pipeline := skaffoldConfig.Pipeline
+			cfgName := getConfigName(skaffoldConfig.Metadata.Name)
 			pipelines[cfgName] = pipeline
 			orderedConfigs = append(orderedConfigs, cfgName)
 		}
@@ -427,7 +451,7 @@ func GetRunContext(ctx context.Context, opts config.SkaffoldOptions, configs []s
 	for _, r := range regList {
 		insecureRegistries[r] = true
 	}
-	ps := NewPipelines(pipelines, orderedConfigs)
+	ps := newPipelines(pipelines, orderedConfigs, dependencies)
 
 	// TODO(https://github.com/GoogleContainerTools/skaffold/issues/3668):
 	// remove minikubeProfile from here and instead detect it by matching the

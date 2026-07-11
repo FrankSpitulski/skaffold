@@ -78,6 +78,16 @@ func TestAddFlagsSmoke(t *testing.T) {
 	}
 }
 
+func TestDeployConcurrencyFlag(t *testing.T) {
+	testutil.Run(t, "deploy", func(t *testutil.T) {
+		t.Override(&opts, config.SkaffoldOptions{})
+		cmd := &cobra.Command{Use: "deploy"}
+		AddFlags(cmd)
+		t.CheckNoError(cmd.Flags().Parse([]string{"--deploy-concurrency=2"}))
+		t.CheckDeepEqual(2, *opts.DeployConcurrency.Value())
+	})
+}
+
 func TestMakeFlag(t *testing.T) {
 	var v string
 	f := Flag{

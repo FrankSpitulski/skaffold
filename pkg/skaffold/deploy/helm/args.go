@@ -19,7 +19,6 @@ package helm
 import (
 	"github.com/blang/semver"
 
-	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/constants"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/graph"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/helm"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/schema/latest"
@@ -27,15 +26,16 @@ import (
 
 // installOpts are options to be passed to "helm install"
 type installOpts struct {
-	flags       []string
-	releaseName string
-	namespace   string
-	chartPath   string
-	upgrade     bool
-	force       bool
-	helmVersion semver.Version
-	repo        string
-	version     string
+	flags         []string
+	releaseName   string
+	namespace     string
+	chartPath     string
+	upgrade       bool
+	force         bool
+	helmVersion   semver.Version
+	repo          string
+	version       string
+	overridesFile string
 }
 
 // installArgs calculates the correct arguments to "helm install"
@@ -93,7 +93,7 @@ func (h *Deployer) installArgs(r latest.HelmRelease, builds []graph.Artifact, o 
 	}
 
 	if len(r.Overrides.Values) != 0 {
-		args = append(args, "-f", constants.HelmOverridesFilename)
+		args = append(args, "-f", o.overridesFile)
 	}
 
 	if r.Wait {

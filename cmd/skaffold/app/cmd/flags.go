@@ -635,6 +635,14 @@ The build result from a previous 'skaffold build --file-output' run can be used 
 		DefinedOn:     []string{"dev", "build", "run", "debug", "deploy"},
 	},
 	{
+		Name:          "deploy-concurrency",
+		Usage:         "Number of Skaffold configurations to deploy concurrently. Set to 0 to allow all ready configurations to run concurrently. Configuration dependency order is preserved.",
+		Value:         &opts.DeployConcurrency,
+		DefValue:      1,
+		FlagAddMethod: "Var",
+		DefinedOn:     []string{"dev", "run", "debug", "deploy"},
+	},
+	{
 		Name:          "digest-source",
 		Usage:         "Set to 'remote' to skip builds and resolve the digest of images by tag from the remote registry. Set to 'local' to build images locally and use digests from built images. Set to 'tag' to use tags directly from the build. Set to 'none' to use tags directly from the Kubernetes manifests. If unspecified, defaults to 'remote' for remote clusters, and 'tag' for local clusters like kind or minikube.",
 		Value:         &opts.DigestSource,

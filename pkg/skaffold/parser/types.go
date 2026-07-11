@@ -24,14 +24,27 @@ import (
 // SkaffoldConfigSet encapsulates a slice of skaffold configurations.
 type SkaffoldConfigSet []*SkaffoldConfigEntry
 
+// ConfigID identifies a skaffold configuration by its source file and index in that file.
+type ConfigID struct {
+	SourceFile  string
+	SourceIndex int
+}
+
 // SkaffoldConfigEntry encapsulates a single skaffold configuration, along with the source filename and its index in that file.
 type SkaffoldConfigEntry struct {
 	*latest.SkaffoldConfig
-	SourceFile   string
-	SourceIndex  int
-	IsRootConfig bool
-	IsRemote     bool
-	YAMLInfos    *configlocations.YAMLInfos
+	SourceFile  string
+	SourceIndex int
+	// RequiredConfigIDs contains direct prerequisite configs in declaration order.
+	RequiredConfigIDs []ConfigID
+	IsRootConfig      bool
+	IsRemote          bool
+	YAMLInfos         *configlocations.YAMLInfos
+}
+
+// ID returns the stable identity of this configuration within the resolved config set.
+func (e *SkaffoldConfigEntry) ID() ConfigID {
+	return ConfigID{SourceFile: e.SourceFile, SourceIndex: e.SourceIndex}
 }
 
 // SelectRootConfigs filters SkaffoldConfigSet to only configs read from the root skaffold.yaml file

@@ -198,12 +198,13 @@ spec:
 	testutil.CheckErrorAndDeepEqual(t, false, err, expected.String(), resultManifest.String())
 }
 
-func TestAlwaysSetRunIDLabel(t *testing.T) {
+func TestAlwaysSetSkaffoldLabels(t *testing.T) {
 	manifests := ManifestList{[]byte(`
 apiVersion: v1
 kind: Pod
 metadata:
   labels:
+    skaffold.dev/config: old
     skaffold.dev/run-id: foo
   name: getting-started
 spec:
@@ -217,6 +218,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   labels:
+    skaffold.dev/config: new
     skaffold.dev/run-id: bar
   name: getting-started
 spec:
@@ -226,6 +228,7 @@ spec:
 `)}
 
 	resultManifest, err := manifests.SetLabels(map[string]string{
+		"skaffold.dev/config": "new",
 		"skaffold.dev/run-id": "bar",
 	}, NewResourceSelectorLabels(TransformAllowlist, TransformDenylist))
 

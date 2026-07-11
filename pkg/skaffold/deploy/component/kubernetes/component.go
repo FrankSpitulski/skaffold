@@ -48,8 +48,13 @@ var (
 	k8sAccessor map[string]access.Accessor
 
 	monitorLock gosync.Mutex
-	k8sMonitor  map[string]k8sstatus.Monitor
+	k8sMonitor  map[monitorKey]k8sstatus.Monitor
 )
+
+type monitorKey struct {
+	kubeContext string
+	configID    string
+}
 
 func newAccessor(cfg portforward.Config, kubeContext string, cli *kubectl.CLI, podSelector kubernetes.PodSelector, labeller label.Config, namespaces *[]string) access.Accessor {
 	accessLock.Lock()
@@ -99,18 +104,19 @@ func newMonitor(cfg k8sstatus.Config, kubeContext string, labeller *label.Defaul
 	}
 	monitorLock.Lock()
 	defer monitorLock.Unlock()
+	key := monitorKey{kubeContext: kubeContext, configID: labeller.ConfigID()}
 	if k8sMonitor == nil {
-		k8sMonitor = make(map[string]k8sstatus.Monitor)
+		k8sMonitor = make(map[monitorKey]k8sstatus.Monitor)
 	}
-	if k8sMonitor[kubeContext] == nil {
+	if k8sMonitor[key] == nil {
 		enabled := cfg.StatusCheck()
 		if enabled != nil && !*enabled { // assume disabled only if explicitly set to false
-			k8sMonitor[kubeContext] = &k8sstatus.NoopMonitor{}
+			k8sMonitor[key] = &k8sstatus.NoopMonitor{}
 		} else {
-			k8sMonitor[kubeContext] = k8sstatus.NewStatusMonitor(cfg, labeller, namespaces, customResourceSelectors)
+			k8sMonitor[key] = k8sstatus.NewStatusMonitor(cfg, labeller, namespaces, customResourceSelectors)
 		}
 	}
-	return k8sMonitor[kubeContext]
+	return k8sMonitor[key]
 }
 
 func newSyncer(cli *kubectl.CLI, namespaces *[]string, formatter k8slogger.Formatter) sync.Syncer {

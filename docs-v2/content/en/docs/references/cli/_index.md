@@ -584,6 +584,9 @@ Options:
     -d, --default-repo='':
 	Default repository value (overrides global config)
 
+    --deploy-concurrency=1:
+	Number of Skaffold configurations to deploy concurrently. Set to 0 to allow all ready configurations to run concurrently. Configuration dependency order is preserved.
+
     --detect-minikube=true:
 	Use heuristics to detect a minikube cluster
 
@@ -734,6 +737,7 @@ Env vars:
 * `SKAFFOLD_CLOUD_RUN_PROJECT` (same as `--cloud-run-project`)
 * `SKAFFOLD_CONFIG` (same as `--config`)
 * `SKAFFOLD_DEFAULT_REPO` (same as `--default-repo`)
+* `SKAFFOLD_DEPLOY_CONCURRENCY` (same as `--deploy-concurrency`)
 * `SKAFFOLD_DETECT_MINIKUBE` (same as `--detect-minikube`)
 * `SKAFFOLD_DISABLE_MULTI_PLATFORM_BUILD` (same as `--disable-multi-platform-build`)
 * `SKAFFOLD_ENABLE_PLATFORM_NODE_AFFINITY` (same as `--enable-platform-node-affinity`)
@@ -914,6 +918,9 @@ Options:
     -d, --default-repo='':
 	Default repository value (overrides global config)
 
+    --deploy-concurrency=1:
+	Number of Skaffold configurations to deploy concurrently. Set to 0 to allow all ready configurations to run concurrently. Configuration dependency order is preserved.
+
     --detect-minikube=true:
 	Use heuristics to detect a minikube cluster
 
@@ -1029,6 +1036,7 @@ Env vars:
 * `SKAFFOLD_CLOUD_RUN_PROJECT` (same as `--cloud-run-project`)
 * `SKAFFOLD_CONFIG` (same as `--config`)
 * `SKAFFOLD_DEFAULT_REPO` (same as `--default-repo`)
+* `SKAFFOLD_DEPLOY_CONCURRENCY` (same as `--deploy-concurrency`)
 * `SKAFFOLD_DETECT_MINIKUBE` (same as `--detect-minikube`)
 * `SKAFFOLD_ENABLE_PLATFORM_NODE_AFFINITY` (same as `--enable-platform-node-affinity`)
 * `SKAFFOLD_FILENAME` (same as `--filename`)
@@ -1115,6 +1123,9 @@ Options:
 
     -d, --default-repo='':
 	Default repository value (overrides global config)
+
+    --deploy-concurrency=1:
+	Number of Skaffold configurations to deploy concurrently. Set to 0 to allow all ready configurations to run concurrently. Configuration dependency order is preserved.
 
     --detect-minikube=true:
 	Use heuristics to detect a minikube cluster
@@ -1266,6 +1277,7 @@ Env vars:
 * `SKAFFOLD_CLOUD_RUN_PROJECT` (same as `--cloud-run-project`)
 * `SKAFFOLD_CONFIG` (same as `--config`)
 * `SKAFFOLD_DEFAULT_REPO` (same as `--default-repo`)
+* `SKAFFOLD_DEPLOY_CONCURRENCY` (same as `--deploy-concurrency`)
 * `SKAFFOLD_DETECT_MINIKUBE` (same as `--detect-minikube`)
 * `SKAFFOLD_DIGEST_SOURCE` (same as `--digest-source`)
 * `SKAFFOLD_DISABLE_MULTI_PLATFORM_BUILD` (same as `--disable-multi-platform-build`)
@@ -1817,6 +1829,9 @@ Options:
     -d, --default-repo='':
 	Default repository value (overrides global config)
 
+    --deploy-concurrency=1:
+	Number of Skaffold configurations to deploy concurrently. Set to 0 to allow all ready configurations to run concurrently. Configuration dependency order is preserved.
+
     --detect-minikube=true:
 	Use heuristics to detect a minikube cluster
 
@@ -1953,6 +1968,7 @@ Env vars:
 * `SKAFFOLD_CLOUD_RUN_PROJECT` (same as `--cloud-run-project`)
 * `SKAFFOLD_CONFIG` (same as `--config`)
 * `SKAFFOLD_DEFAULT_REPO` (same as `--default-repo`)
+* `SKAFFOLD_DEPLOY_CONCURRENCY` (same as `--deploy-concurrency`)
 * `SKAFFOLD_DETECT_MINIKUBE` (same as `--detect-minikube`)
 * `SKAFFOLD_DIGEST_SOURCE` (same as `--digest-source`)
 * `SKAFFOLD_DISABLE_MULTI_PLATFORM_BUILD` (same as `--disable-multi-platform-build`)

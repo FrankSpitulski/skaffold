@@ -19,6 +19,7 @@ package output
 import (
 	"context"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/constants"
@@ -33,11 +34,16 @@ type skaffoldWriter struct {
 	EventWriter io.Writer
 	task        constants.Phase
 	subtask     string
+	writeLock   *sync.Mutex
 
 	timestamps bool
 }
 
 func (s skaffoldWriter) Write(p []byte) (int, error) {
+	if s.writeLock != nil {
+		s.writeLock.Lock()
+		defer s.writeLock.Unlock()
+	}
 	written := 0
 	if s.timestamps {
 		t, err := s.MainWriter.Write([]byte(time.Now().Format(timestampFormat) + " "))
@@ -61,6 +67,28 @@ func (s skaffoldWriter) Write(p []byte) (int, error) {
 	s.EventWriter.Write(p)
 
 	return written, nil
+}
+
+type synchronizedWriter struct {
+	writer io.Writer
+	lock   *sync.Mutex
+}
+
+func (w *synchronizedWriter) Write(p []byte) (int, error) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	return w.writer.Write(p)
+}
+
+// SynchronizeWriter serializes writes while preserving Skaffold event context support.
+func SynchronizeWriter(out io.Writer) io.Writer {
+	if sw, ok := out.(skaffoldWriter); ok {
+		if sw.writeLock == nil {
+			sw.writeLock = &sync.Mutex{}
+		}
+		return sw
+	}
+	return &synchronizedWriter{writer: out, lock: &sync.Mutex{}}
 }
 
 func GetWriter(ctx context.Context, out io.Writer, defaultColor int, forceColors bool, timestamps bool) io.Writer {
@@ -102,6 +130,7 @@ func WithEventContext(ctx context.Context, out io.Writer, phase constants.Phase,
 			EventWriter: eventV2.NewLogger(phase, subtaskID),
 			task:        phase,
 			subtask:     subtaskID,
+			writeLock:   sw.writeLock,
 			timestamps:  sw.timestamps,
 		}, ctx
 	}

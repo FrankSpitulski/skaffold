@@ -110,6 +110,29 @@ In addition to authoring configurations in a `skaffold.yaml` file, we can also i
 Running `skaffold <command> --module <config-name>` will filter to the specified target module, but also include the transitive closure of all other configurations in its dependency graph. For instance, if a module `cfg1` imported another module `cfg2` as a dependency while `cfg2` imported `cfg3` and `cfg4`, then running `skaffold dev --module cfg1` would activate all of `cfg1`, `cfg2`, `cfg3` and `cfg4` and execute them in dependency order.
 {{< /alert >}}
 
+### Concurrent deployments
+
+{{< alert title="Experimental" >}}
+Deployment concurrency is experimental. Its behavior may change as additional
+deployer combinations gain integration coverage.
+{{< /alert >}}
+
+Deployments run serially by default. Use `--deploy-concurrency=N` with `dev`,
+`run`, `debug`, or `deploy` to deploy up to `N` ready configurations
+concurrently. Set the value to `0` to allow every ready configuration to deploy
+concurrently.
+
+Skaffold always waits for a configuration's direct `requires` dependencies
+before deploying it. Independent branches can run concurrently. Deployers
+within one configuration continue to run in their declared order.
+
+Configurations deployed concurrently should not manage the same Kubernetes
+object. Add a `requires` edge when one configuration must finish before another
+configuration updates the same resource. Helm release concurrency is separate
+and composes with `--deploy-concurrency`. The maximum active Helm operations can
+be the product of the outer deployment concurrency and each Helm deployer's
+release concurrency.
+
 ### Local config dependency
 
 Consider the same `skaffold.yaml` defined above. Modules `cfg1` and `cfg2` from the above file can be imported as dependencies in your current config definition, via:

@@ -26,11 +26,36 @@ import (
 
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/config"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/docker"
+	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/parser"
+	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/runner/runcontext"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/schema/latest"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/schema/validation"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/update"
 	"github.com/GoogleContainerTools/skaffold/v2/testutil"
 )
+
+func TestGetConfigDependencies(t *testing.T) {
+	required := &parser.SkaffoldConfigEntry{SkaffoldConfig: &latest.SkaffoldConfig{}, SourceFile: "required.yaml", SourceIndex: 0}
+	root := &parser.SkaffoldConfigEntry{
+		SkaffoldConfig:    &latest.SkaffoldConfig{},
+		SourceFile:        "root.yaml",
+		SourceIndex:       0,
+		RequiredConfigIDs: []parser.ConfigID{required.ID()},
+	}
+
+	dependencies, err := getConfigDependencies(parser.SkaffoldConfigSet{required, root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testutil.CheckDeepEqual(t, runcontext.ConfigDependencies{1: []int{0}}, dependencies)
+
+	root.RequiredConfigIDs = []parser.ConfigID{{SourceFile: "missing.yaml", SourceIndex: 0}}
+	_, err = getConfigDependencies(parser.SkaffoldConfigSet{required, root})
+	if err == nil {
+		t.Fatal("expected unresolved configuration error")
+	}
+	testutil.CheckContains(t, "requires unresolved configuration", err.Error())
+}
 
 func TestCreateNewRunner(t *testing.T) {
 	tests := []struct {

@@ -117,3 +117,11 @@ func TestApplyLabels(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigScopedLabeller(t *testing.T) {
+	base := NewLabeller(true, nil, "run-123")
+	scoped := base.WithConfigID("config-a")
+
+	testutil.CheckDeepEqual(t, "", base.ConfigID())
+	testutil.CheckDeepEqual(t, "skaffold.dev/run-id=run-123,skaffold.dev/config=config-a", scoped.StatusCheckSelector())
+}

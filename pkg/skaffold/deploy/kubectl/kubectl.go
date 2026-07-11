@@ -240,6 +240,13 @@ func (k *Deployer) Deploy(ctx context.Context, out io.Writer, builds []graph.Art
 	if manifests, err = manifest.ApplyTransforms(manifests, builds, k.insecureRegistries, debugHelpersRegistry); err != nil {
 		return err
 	}
+	if k.labeller.ConfigID() != "" {
+		labels := k.labeller.Labels()
+		manifests, err = manifests.SetLabels(labels, manifest.NewResourceSelectorLabels(k.transformableAllowlist, k.transformableDenylist))
+		if err != nil {
+			return err
+		}
+	}
 
 	childCtx, endTrace = instrumentation.StartTrace(ctx, "Deploy_LoadImages")
 	if err := k.imageLoader.LoadImages(childCtx, out, k.localImages, k.originalImages, builds); err != nil {

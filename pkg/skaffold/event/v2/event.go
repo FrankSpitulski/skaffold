@@ -245,6 +245,14 @@ func (ev *eventHandler) handleExec(event *proto.Event) {
 			ev.state.BuildState.Artifacts[be.Artifact] = be.Status
 			ev.stateLock.Unlock()
 		}
+	case *proto.Event_TaskEvent:
+		if e.TaskEvent.Task == string(constants.Deploy) {
+			ev.stateLock.Lock()
+			if ev.state.DeployState != nil {
+				ev.state.DeployState.Status = e.TaskEvent.Status
+			}
+			ev.stateLock.Unlock()
+		}
 	case *proto.Event_TestEvent:
 		te := e.TestEvent
 		ev.stateLock.Lock()
@@ -264,11 +272,6 @@ func (ev *eventHandler) handleExec(event *proto.Event) {
 		te := e.ExecEvent
 		ev.stateLock.Lock()
 		ev.state.ExecState.Status = te.Status
-		ev.stateLock.Unlock()
-	case *proto.Event_DeploySubtaskEvent:
-		de := e.DeploySubtaskEvent
-		ev.stateLock.Lock()
-		ev.state.DeployState.Status = de.Status
 		ev.stateLock.Unlock()
 	case *proto.Event_PortEvent:
 		pe := e.PortEvent

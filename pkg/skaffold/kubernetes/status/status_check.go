@@ -228,7 +228,7 @@ func (s *monitor) statusCheck(ctx context.Context, out io.Writer) (proto.StatusC
 		}
 
 		for _, selector := range s.crSelectors {
-			customResources, err := getCustomResources(client, dynClient, s.manifests, n, getDeadline(s.deadlineSeconds), s.tolerateFailures, selector)
+			customResources, err := getCustomResources(client, dynClient, s.manifests, n, s.labeller, getDeadline(s.deadlineSeconds), s.tolerateFailures, selector)
 			if err != nil {
 				return proto.StatusCode_STATUSCHECK_CUSTOM_RESOURCE_FETCH_ERR, fmt.Errorf("could not fetch custom resources: %w", err)
 			}
@@ -285,7 +285,7 @@ func getStandalonePods(ctx context.Context, client kubernetes.Interface, ns stri
 	var result []*resource.Resource
 	selector := validator.NewStandalonePodsSelector(client)
 	pods, err := selector.Select(ctx, ns, metav1.ListOptions{
-		LabelSelector: l.RunIDSelector(),
+		LabelSelector: l.StatusCheckSelector(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch standalone pods: %w", err)
@@ -293,8 +293,7 @@ func getStandalonePods(ctx context.Context, client kubernetes.Interface, ns stri
 	if len(pods) == 0 {
 		return result, nil
 	}
-	pd := diag.New([]string{ns}).
-		WithLabel(label.RunIDLabel, l.Labels()[label.RunIDLabel]).
+	pd := withSkaffoldLabels(diag.New([]string{ns}), l).
 		WithValidators([]validator.Validator{validator.NewPodValidator(client, selector)})
 	result = append(result, resource.NewResource(string(resource.ResourceTypes.StandalonePods), resource.ResourceTypes.StandalonePods, ns, deadlineDuration, tolerateFailures).WithValidator(pd))
 
@@ -308,33 +307,50 @@ func getConfigConnectorResources(client kubernetes.Interface, dynClient dynamic.
 		return nil, fmt.Errorf("could not fetch config connector resources: %w", err)
 	}
 	for _, r := range uRes {
+		resourceNamespace := r.GetNamespace()
+		if resourceNamespace == "" {
+			resourceNamespace = ns
+		} else if resourceNamespace != ns {
+			continue
+		}
 		resName := r.GroupVersionKind().String()
 		if r.GetName() != "" {
 			resName = fmt.Sprintf("%s, Name=%s", resName, r.GetName())
 		}
-		pd := diag.New([]string{ns}).
-			WithLabel(label.RunIDLabel, l.Labels()[label.RunIDLabel]).
-			WithValidators([]validator.Validator{validator.NewConfigConnectorValidator(client, dynClient, r.GroupVersionKind())})
-		result = append(result, resource.NewResource(resName, resource.ResourceTypes.ConfigConnector, ns, deadlineDuration, tolerateFailures).WithValidator(pd))
+		pd := diag.New([]string{resourceNamespace})
+		if r.GetName() == "" {
+			pd = withSkaffoldLabels(pd, l)
+		}
+		pd = pd.WithValidators([]validator.Validator{validator.NewConfigConnectorValidator(client, dynClient, r.GroupVersionKind(), r.GetName())})
+		result = append(result, resource.NewResource(resName, resource.ResourceTypes.ConfigConnector, resourceNamespace, deadlineDuration, tolerateFailures).WithValidator(pd))
 	}
 
 	return result, nil
 }
 
-func getCustomResources(client kubernetes.Interface, dynClient dynamic.Interface, m manifest.ManifestList, ns string, deadlineDuration time.Duration, tolerateFailures bool, selector manifest.GroupKindSelector) ([]*resource.Resource, error) {
+func getCustomResources(client kubernetes.Interface, dynClient dynamic.Interface, m manifest.ManifestList, ns string, l *label.DefaultLabeller, deadlineDuration time.Duration, tolerateFailures bool, selector manifest.GroupKindSelector) ([]*resource.Resource, error) {
 	var result []*resource.Resource
 	uRes, err := m.SelectResources(selector)
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch custom resources: %w", err)
 	}
 	for _, r := range uRes {
+		resourceNamespace := r.GetNamespace()
+		if resourceNamespace == "" {
+			resourceNamespace = ns
+		} else if resourceNamespace != ns {
+			continue
+		}
 		resName := r.GroupVersionKind().String()
 		if r.GetName() != "" {
 			resName = fmt.Sprintf("%s, Name=%s", resName, r.GetName())
 		}
-		pd := diag.New([]string{ns}).
-			WithValidators([]validator.Validator{validator.NewCustomValidator(client, dynClient, r.GroupVersionKind())})
-		result = append(result, resource.NewResource(resName, resource.ResourceTypes.CustomResource, ns, deadlineDuration, tolerateFailures).WithValidator(pd))
+		pd := diag.New([]string{resourceNamespace})
+		if r.GetName() == "" {
+			pd = withSkaffoldLabels(pd, l)
+		}
+		pd = pd.WithValidators([]validator.Validator{validator.NewCustomValidator(client, dynClient, r.GroupVersionKind(), r.GetName())})
+		result = append(result, resource.NewResource(resName, resource.ResourceTypes.CustomResource, resourceNamespace, deadlineDuration, tolerateFailures).WithValidator(pd))
 	}
 
 	return result, nil
@@ -342,7 +358,7 @@ func getCustomResources(client kubernetes.Interface, dynClient dynamic.Interface
 
 func getDeployments(ctx context.Context, client kubernetes.Interface, ns string, l *label.DefaultLabeller, deadlineDuration time.Duration, tolerateFailures bool) ([]*resource.Resource, error) {
 	deps, err := client.AppsV1().Deployments(ns).List(ctx, metav1.ListOptions{
-		LabelSelector: l.RunIDSelector(),
+		LabelSelector: l.StatusCheckSelector(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch deployments: %w", err)
@@ -372,7 +388,7 @@ func getDeployments(ctx context.Context, client kubernetes.Interface, ns string,
 
 func getStatefulSets(ctx context.Context, client kubernetes.Interface, ns string, l *label.DefaultLabeller, deadline time.Duration, tolerateFailures bool) ([]*resource.Resource, error) {
 	sets, err := client.AppsV1().StatefulSets(ns).List(ctx, metav1.ListOptions{
-		LabelSelector: l.RunIDSelector(),
+		LabelSelector: l.StatusCheckSelector(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch stateful sets: %w", err)
@@ -391,6 +407,15 @@ func getStatefulSets(ctx context.Context, client kubernetes.Interface, ns string
 		resources[i] = resource.NewResource(ss.Name, resource.ResourceTypes.StatefulSet, ss.Namespace, deadline, tolerateFailures).WithValidator(pd)
 	}
 	return resources, nil
+}
+
+func withSkaffoldLabels(d diag.Diagnose, l *label.DefaultLabeller) diag.Diagnose {
+	labels := l.Labels()
+	d = d.WithLabel(label.RunIDLabel, labels[label.RunIDLabel])
+	if configID := l.ConfigID(); configID != "" {
+		d = d.WithLabel(label.ConfigIDLabel, configID)
+	}
+	return d
 }
 
 func pollResourceStatus(ctx context.Context, cfg Config, r *resource.Resource) {

@@ -227,6 +227,24 @@ func TestDeployDependenciesOrder(t *testing.T) {
 	}
 }
 
+func TestDeployDependenciesMixedKubectlThenHelm(t *testing.T) {
+	MarkIntegrationTest(t, CanRunWithoutGcp)
+
+	markerDir := t.TempDir()
+	env := []string{"DEPLOY_CONCURRENCY_TEST_DIR=" + markerDir}
+	ns, _ := SetupNamespace(t)
+	const dir = "testdata/multi-config-deploy-mixed"
+
+	skaffold.Deploy("--deploy-concurrency=2").InDir(dir).InNs(ns.Name).WithEnv(env).RunOrFail(t)
+	defer skaffold.Delete().InDir(dir).InNs(ns.Name).WithEnv(env).RunOrFail(t)
+
+	for _, marker := range []string{"required.done", "root.done"} {
+		if _, err := os.Stat(filepath.Join(markerDir, marker)); err != nil {
+			t.Errorf("expected deployment marker %q: %v", marker, err)
+		}
+	}
+}
+
 // Copies a file or directory tree.  There are 2x3 cases:
 //   1. If _src_ is a file,
 //      1. and _dst_ exists and is a file then _src_ is copied into _dst_

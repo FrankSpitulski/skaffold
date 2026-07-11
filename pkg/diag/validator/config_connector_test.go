@@ -137,7 +137,7 @@ func TestConfigConnectorValidator(t *testing.T) {
 				})
 				client.Tracker().Add(&item)
 			}
-			v := NewConfigConnectorValidator(client, dynClient, targetGvk)
+			v := NewConfigConnectorValidator(client, dynClient, targetGvk, "foo1")
 			r, err := v.Validate(context.Background(), "", metav1.ListOptions{})
 			t.CheckNoError(err)
 
@@ -151,4 +151,9 @@ func TestConfigConnectorValidator(t *testing.T) {
 			}), protocmp.Transform())
 		})
 	}
+}
+
+func TestNamedResourceOptions(t *testing.T) {
+	got := namedResourceOptions(metav1.ListOptions{LabelSelector: "skaffold.dev/config=config"}, "resource")
+	testutil.CheckDeepEqual(t, metav1.ListOptions{FieldSelector: "metadata.name=resource"}, got)
 }

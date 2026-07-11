@@ -21,17 +21,22 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"k8s.io/client-go/tools/clientcmd/api"
 
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/config"
+	eventV2 "github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/event/v2"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/graph"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/kubernetes/client"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/kubernetes/manifest"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/runner/runcontext"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/schema/latest"
 	"github.com/GoogleContainerTools/skaffold/v2/testutil"
+	testEvent "github.com/GoogleContainerTools/skaffold/v2/testutil/event"
 )
 
 func TestDeploy(t *testing.T) {
@@ -66,6 +71,37 @@ func TestDeploy(t *testing.T) {
 			t.CheckError(test.shouldErr, err)
 		})
 	}
+}
+
+func TestDeployStatusLogFailureMarksTaskFailed(t *testing.T) {
+	testutil.Run(t, "status log creation fails", func(t *testutil.T) {
+		t.SetupFakeKubernetesContext(api.Config{CurrentContext: "cluster1"})
+		t.Override(&client.Client, mockK8sClient)
+
+		r := createRunner(t, &TestBench{}, nil, nil, nil)
+		r.runCtx.Opts.Muted.Phases = []string{"status-check"}
+		blocked := filepath.Join(t.TempDir(), "blocked")
+		t.RequireNoError(os.WriteFile(blocked, nil, 0o600))
+		t.Setenv("TMPDIR", blocked)
+		testEvent.InitializeState([]latest.Pipeline{{}})
+
+		err := r.Deploy(context.Background(), io.Discard, nil, manifest.ManifestListByConfig{})
+		if err == nil {
+			t.Fatal("Deploy() error = nil, want status log creation error")
+		}
+		deadline := time.Now().Add(time.Second)
+		for {
+			state, stateErr := eventV2.GetState()
+			t.RequireNoError(stateErr)
+			if state.DeployState.Status == eventV2.Failed {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("deploy state = %q, want %q", state.DeployState.Status, eventV2.Failed)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	})
 }
 
 func TestSkaffoldDeployRenderOnly(t *testing.T) {

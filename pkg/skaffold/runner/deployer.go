@@ -142,11 +142,17 @@ func GetDeployer(ctx context.Context, runCtx *runcontext.RunContext, labeller *l
 	var deployers []deploy.Deployer
 	localDeploy := false
 	remoteDeploy := false
-	for _, configName := range pipelines.AllOrderedConfigNames() {
+	orderedConfigs := pipelines.AllOrderedConfigNames()
+	deployConcurrency := runCtx.DeployConcurrency()
+	for configIndex, configName := range orderedConfigs {
 		pl := pipelines.GetForConfigName(configName)
 		d := pl.Deploy
 		r := pl.Render
 		dCtx := &deployerCtx{runCtx, d}
+		configLabeller := labeller
+		if deployConcurrency != 1 && len(orderedConfigs) > 1 {
+			configLabeller = labeller.WithConfigID(strconv.Itoa(configIndex))
+		}
 
 		if d.DockerDeploy != nil {
 			localDeploy = true
@@ -171,7 +177,7 @@ func GetDeployer(ctx context.Context, runCtx *runcontext.RunContext, labeller *l
 				d.LegacyHelmDeploy.Releases = r.Helm.Releases
 				d.LegacyHelmDeploy.Flags = r.Helm.Flags
 			}
-			h, err := helm.NewDeployer(ctx, dCtx, labeller, d.LegacyHelmDeploy, runCtx.Artifacts(), configName, gks)
+			h, err := helm.NewDeployer(ctx, dCtx, configLabeller, d.LegacyHelmDeploy, runCtx.Artifacts(), configName, gks)
 			if err != nil {
 				return nil, err
 			}
@@ -179,7 +185,7 @@ func GetDeployer(ctx context.Context, runCtx *runcontext.RunContext, labeller *l
 		}
 
 		if d.KubectlDeploy != nil {
-			deployer, err := kubectl.NewDeployer(dCtx, labeller, d.KubectlDeploy, runCtx.Artifacts(), configName, gks)
+			deployer, err := kubectl.NewDeployer(dCtx, configLabeller, d.KubectlDeploy, runCtx.Artifacts(), configName, gks)
 			if err != nil {
 				return nil, err
 			}
@@ -213,8 +219,7 @@ func GetDeployer(ctx context.Context, runCtx *runcontext.RunContext, labeller *l
 	if localDeploy && remoteDeploy {
 		return nil, errors.New("docker deployment not supported alongside cluster deployments")
 	}
-
-	return deploy.NewDeployerMux(deployers, runCtx.IterativeStatusCheck()), nil
+	return deploy.NewConcurrentDeployerMux(deployers, orderedConfigs, pipelines.ConfigDependencies(), runCtx.IterativeStatusCheck(), deployConcurrency)
 }
 
 /*

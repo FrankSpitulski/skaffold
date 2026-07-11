@@ -91,8 +91,12 @@ func runContext(ctx context.Context, out io.Writer, opts config.SkaffoldOptions)
 	for _, cfg := range cfgSet {
 		configs = append(configs, cfg.SkaffoldConfig)
 	}
+	configDependencies, err := getConfigDependencies(cfgSet)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	runCtx, err := runcontext.GetRunContext(ctx, opts, configs)
+	runCtx, err := runcontext.GetRunContextWithConfigDependencies(ctx, opts, configs, configDependencies)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting run context: %w", err)
 	}
@@ -102,6 +106,25 @@ func runContext(ctx context.Context, out io.Writer, opts config.SkaffoldOptions)
 	}
 
 	return runCtx, configs, nil
+}
+
+func getConfigDependencies(configs parser.SkaffoldConfigSet) (runcontext.ConfigDependencies, error) {
+	configIndexes := make(map[parser.ConfigID]int, len(configs))
+	for index, cfg := range configs {
+		configIndexes[cfg.ID()] = index
+	}
+
+	dependencies := make(runcontext.ConfigDependencies, len(configs))
+	for index, cfg := range configs {
+		for _, requiredID := range cfg.RequiredConfigIDs {
+			requiredIndex, found := configIndexes[requiredID]
+			if !found {
+				return nil, fmt.Errorf("configuration %q requires unresolved configuration from %s at index %d", cfg.Metadata.Name, requiredID.SourceFile, requiredID.SourceIndex)
+			}
+			dependencies[index] = append(dependencies[index], requiredIndex)
+		}
+	}
+	return dependencies, nil
 }
 
 // withFallbackConfig will try to automatically generate a config if root `skaffold.yaml` file does not exist.

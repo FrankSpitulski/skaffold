@@ -37,7 +37,6 @@ import (
 
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/access"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/config"
-	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/constants"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/debug"
 	component "github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/deploy/component/kubernetes"
 	deployerr "github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/deploy/error"
@@ -75,6 +74,24 @@ var (
 
 	// helm31Version represents the version cut-off for helm3.1 post-renderer behavior
 	helm31Version = semver.MustParse("3.1.0")
+
+	createOverridesFile = func(overrides []byte) (string, error) {
+		file, err := os.CreateTemp("", "skaffold-overrides-*.yaml")
+		if err != nil {
+			return "", err
+		}
+		name := file.Name()
+		if _, err := file.Write(overrides); err != nil {
+			file.Close()
+			os.Remove(name)
+			return "", err
+		}
+		if err := file.Close(); err != nil {
+			os.Remove(name)
+			return "", err
+		}
+		return name, nil
+	}
 )
 
 // Deployer deploys workflows using the helm CLI
@@ -575,13 +592,15 @@ func (h *Deployer) deployRelease(ctx context.Context, out io.Writer, releaseName
 			return nil, nil, helm.UserErr("cannot marshal overrides to create overrides values.yaml", err)
 		}
 
-		if err := os.WriteFile(constants.HelmOverridesFilename, overrides, 0666); err != nil {
-			return nil, nil, helm.UserErr(fmt.Sprintf("cannot create file %q", constants.HelmOverridesFilename), err)
+		overridesFile, err := createOverridesFile(overrides)
+		if err != nil {
+			return nil, nil, helm.UserErr("cannot create overrides values file", err)
 		}
+		opts.overridesFile = overridesFile
 
 		defer func() {
-			if err := os.Remove(constants.HelmOverridesFilename); err != nil {
-				olog.Entry(ctx).Debugf("unable to remove %q: %v", constants.HelmOverridesFilename, err)
+			if err := os.Remove(overridesFile); err != nil {
+				olog.Entry(ctx).Debugf("unable to remove %q: %v", overridesFile, err)
 			}
 		}()
 	}

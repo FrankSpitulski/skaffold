@@ -100,6 +100,7 @@ type SkaffoldOptions struct {
 	HydratedManifests           []string
 	Platforms                   []string
 	BuildConcurrency            int
+	DeployConcurrency           IntOrUndefined
 	WatchPollInterval           int
 	StatusCheck                 BoolOrUndefined
 	PushImages                  BoolOrUndefined

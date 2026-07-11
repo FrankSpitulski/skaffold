@@ -23,6 +23,7 @@ import (
 
 const (
 	RunIDLabel          = "skaffold.dev/run-id"
+	ConfigIDLabel       = "skaffold.dev/config"
 	DebugContainerLabel = "skaffold.dev/debug"
 )
 
@@ -35,6 +36,7 @@ type DefaultLabeller struct {
 	addSkaffoldLabels bool
 	customLabels      []string
 	runID             string
+	configID          string
 }
 
 func NewLabeller(addSkaffoldLabels bool, customLabels []string, runID string) *DefaultLabeller {
@@ -43,6 +45,13 @@ func NewLabeller(addSkaffoldLabels bool, customLabels []string, runID string) *D
 		customLabels:      customLabels,
 		runID:             runID,
 	}
+}
+
+// WithConfigID returns a copy scoped to one Skaffold configuration.
+func (d *DefaultLabeller) WithConfigID(value string) *DefaultLabeller {
+	copy := *d
+	copy.configID = value
+	return &copy
 }
 
 func (d *DefaultLabeller) Labels() map[string]string {
@@ -60,6 +69,9 @@ func (d *DefaultLabeller) Labels() map[string]string {
 		}
 		labels[l[0]] = l[1]
 	}
+	if d.configID != "" {
+		labels[ConfigIDLabel] = d.configID
+	}
 
 	return labels
 }
@@ -73,6 +85,19 @@ func (d *DefaultLabeller) DebugLabels() map[string]string {
 
 func (d *DefaultLabeller) RunIDSelector() string {
 	return fmt.Sprintf("%s=%s", RunIDLabel, d.Labels()[RunIDLabel])
+}
+
+// StatusCheckSelector selects resources from one configuration when scoped.
+func (d *DefaultLabeller) StatusCheckSelector() string {
+	selector := d.RunIDSelector()
+	if configID := d.ConfigID(); configID != "" {
+		selector += fmt.Sprintf(",%s=%s", ConfigIDLabel, configID)
+	}
+	return selector
+}
+
+func (d *DefaultLabeller) ConfigID() string {
+	return d.configID
 }
 
 func (d *DefaultLabeller) GetRunID() string {

@@ -22,6 +22,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -41,9 +42,11 @@ type CustomResourceSelector struct {
 
 type CustomValidator struct {
 	resourceSelector *CustomResourceSelector
+	resourceName     string
 }
 
 func (c CustomValidator) Validate(ctx context.Context, ns string, opts metav1.ListOptions) ([]Resource, error) {
+	opts = namedResourceOptions(opts, c.resourceName)
 	resources, err := c.resourceSelector.Select(ctx, ns, opts)
 	if err != nil {
 		return []Resource{}, err
@@ -58,9 +61,17 @@ func (c CustomValidator) Validate(ctx context.Context, ns string, opts metav1.Li
 	return rs, nil
 }
 
+func namedResourceOptions(opts metav1.ListOptions, name string) metav1.ListOptions {
+	if name != "" {
+		opts.LabelSelector = ""
+		opts.FieldSelector = fields.OneTermEqualSelector("metadata.name", name).String()
+	}
+	return opts
+}
+
 // NewCustomValidator initializes a CustomValidator
-func NewCustomValidator(k kubernetes.Interface, d dynamic.Interface, gvk schema.GroupVersionKind) *CustomValidator {
-	return &CustomValidator{resourceSelector: NewCustomResourceSelector(k, d, gvk)}
+func NewCustomValidator(k kubernetes.Interface, d dynamic.Interface, gvk schema.GroupVersionKind, resourceName string) *CustomValidator {
+	return &CustomValidator{resourceSelector: NewCustomResourceSelector(k, d, gvk), resourceName: resourceName}
 }
 
 func NewCustomResourceSelector(client kubernetes.Interface, dynClient dynamic.Interface, gvk schema.GroupVersionKind) *CustomResourceSelector {

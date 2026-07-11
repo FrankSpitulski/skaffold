@@ -18,56 +18,28 @@ package v2
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/constants"
-	sErrors "github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/errors"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/schema/latest"
-	proto "github.com/GoogleContainerTools/skaffold/v2/proto/v2"
 )
 
-func TestHandleDeploySubtaskEvent(t *testing.T) {
-	tests := []struct {
-		name  string
-		event *proto.DeploySubtaskEvent
-	}{
-		{
-			name: "In Progress",
-			event: &proto.DeploySubtaskEvent{
-				Id:     "0",
-				TaskId: fmt.Sprintf("%s-%d", constants.Deploy, 0),
-				Status: InProgress,
-			},
-		},
-		{
-			name: "Failed",
-			event: &proto.DeploySubtaskEvent{
-				Id:            "23",
-				TaskId:        fmt.Sprintf("%s-%d", constants.Deploy, 0),
-				Status:        Failed,
-				ActionableErr: sErrors.ActionableErrV2(handler.cfg, constants.Deploy, errors.New("deploy failed")),
-			},
-		},
-		{
-			name: "Succeeded",
-			event: &proto.DeploySubtaskEvent{
-				Id:     "99",
-				TaskId: fmt.Sprintf("%s-%d", constants.Deploy, 12),
-				Status: Succeeded,
-			},
-		},
-	}
-
+func TestDeployTaskStateIgnoresSubtaskTerminalState(t *testing.T) {
 	defer func() { handler = newHandler() }()
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			handler = newHandler()
-			handler.state = emptyState(mockCfg([]latest.Pipeline{{}}, "test"))
+	handler = newHandler()
+	handler.state = emptyState(mockCfg([]latest.Pipeline{{}}, "test"))
 
-			wait(t, func() bool { return handler.getState().DeployState.Status == NotStarted })
-			handler.handleDeploySubtaskEvent(test.event)
-			wait(t, func() bool { return handler.getState().DeployState.Status == test.event.Status })
-		})
+	TaskInProgress(constants.Deploy, "deploy")
+	wait(t, func() bool { return handler.getState().DeployState.Status == InProgress })
+	DeploySucceeded(0)
+	wait(t, func() bool {
+		handler.logLock.Lock()
+		defer handler.logLock.Unlock()
+		return len(handler.eventLog) == 2
+	})
+	if status := handler.getState().DeployState.Status; status != InProgress {
+		t.Fatalf("deploy state = %q after subtask success, want %q", status, InProgress)
 	}
+	TaskFailed(constants.Deploy, errors.New("deploy failed"))
+	wait(t, func() bool { return handler.getState().DeployState.Status == Failed })
 }

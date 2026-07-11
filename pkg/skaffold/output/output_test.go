@@ -107,8 +107,21 @@ func TestWithEventContext(t *testing.T) {
 	for _, test := range tests {
 		testutil.Run(t, test.name, func(t *testutil.T) {
 			got, _ := WithEventContext(context.Background(), test.writer, test.phase, test.subtaskID)
-			t.CheckDeepEqual(test.expected, got, cmpopts.IgnoreTypes(false, "", constants.DevLoop))
+			t.CheckDeepEqual(test.expected, got, cmpopts.IgnoreTypes(false, "", constants.DevLoop), cmpopts.IgnoreFields(skaffoldWriter{}, "writeLock"))
 		})
+	}
+}
+
+func TestSynchronizeWriterPreservesEventContext(t *testing.T) {
+	base := SynchronizeWriter(skaffoldWriter{MainWriter: io.Discard, EventWriter: io.Discard})
+	nested := SynchronizeWriter(base)
+	first, _ := WithEventContext(context.Background(), base, constants.Deploy, "first")
+	second, _ := WithEventContext(context.Background(), nested, constants.Deploy, "second")
+
+	firstWriter := first.(skaffoldWriter)
+	secondWriter := second.(skaffoldWriter)
+	if firstWriter.writeLock == nil || firstWriter.writeLock != secondWriter.writeLock {
+		t.Fatal("event writers do not share the synchronized writer lock")
 	}
 }
 

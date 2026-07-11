@@ -76,3 +76,22 @@ func TestGetMonitor(t *testing.T) {
 		})
 	}
 }
+
+func TestMonitorIsolationByConfig(t *testing.T) {
+	testutil.Run(t, "monitor cache scope", func(t *testutil.T) {
+		t.Override(&k8sMonitor, nil)
+
+		cfg := mockStatusConfig{}
+		namespaces := []string{}
+		base := label.NewLabeller(true, nil, "run-123")
+		configA := NewMonitor(cfg, "context-a", base.WithConfigID("config-a"), &namespaces, nil)
+		configAAgain := NewMonitor(cfg, "context-a", base.WithConfigID("config-a"), &namespaces, nil)
+		if configA != configAAgain {
+			t.Error("monitors for the same configuration should be shared")
+		}
+		configB := NewMonitor(cfg, "context-a", base.WithConfigID("config-b"), &namespaces, nil)
+		if configA == configB {
+			t.Error("monitors for different configurations should be distinct")
+		}
+	})
+}

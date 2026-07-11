@@ -34,15 +34,17 @@ var _ Validator = (*ConfigConnectorValidator)(nil)
 // ConfigConnectorValidator implements the Validator interface for Config Connector resources
 type ConfigConnectorValidator struct {
 	resourceSelector *CustomResourceSelector
+	resourceName     string
 }
 
 // NewConfigConnectorValidator initializes a ConfigConnectorValidator
-func NewConfigConnectorValidator(k kubernetes.Interface, d dynamic.Interface, gvk schema.GroupVersionKind) *ConfigConnectorValidator {
-	return &ConfigConnectorValidator{resourceSelector: NewCustomResourceSelector(k, d, gvk)}
+func NewConfigConnectorValidator(k kubernetes.Interface, d dynamic.Interface, gvk schema.GroupVersionKind, resourceName string) *ConfigConnectorValidator {
+	return &ConfigConnectorValidator{resourceSelector: NewCustomResourceSelector(k, d, gvk), resourceName: resourceName}
 }
 
 // Validate implements the Validate method for Validator interface
 func (ccv *ConfigConnectorValidator) Validate(ctx context.Context, ns string, opts metav1.ListOptions) ([]Resource, error) {
+	opts = namedResourceOptions(opts, ccv.resourceName)
 	resources, err := ccv.resourceSelector.Select(ctx, ns, opts)
 	if err != nil {
 		return []Resource{}, err

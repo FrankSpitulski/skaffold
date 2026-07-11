@@ -1,0 +1,22 @@
+apiVersion: skaffold/v4beta14
+kind: Config
+metadata:
+  name: helm-root
+requires:
+- path: required
+manifests:
+  helm:
+    releases:
+    - name: deploy-concurrency-mixed
+      chartPath: chart
+deploy:
+  helm:
+    hooks:
+      before:
+      - host:
+          command: [sh, -c, 'test -f "$DEPLOY_CONCURRENCY_TEST_DIR/required.done"']
+          os: [darwin, linux]
+      after:
+      - host:
+          command: [sh, -c, 'touch "$DEPLOY_CONCURRENCY_TEST_DIR/root.done"']
+          os: [darwin, linux]
