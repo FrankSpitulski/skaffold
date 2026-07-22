@@ -153,10 +153,7 @@ func GetDeployer(ctx context.Context, runCtx *runcontext.RunContext, labeller *l
 		pl := pipelines.GetForConfigName(configName)
 		d := pl.Deploy
 		r := pl.Render
-		dCtx := &deployerCtx{RunContext: runCtx, deploy: d}
-		if deployConcurrency != 1 && len(orderedConfigs) > 1 {
-			dCtx.statusCheckScope = configName
-		}
+		dCtx := &deployerCtx{RunContext: runCtx, deploy: d, statusCheckScope: configName}
 
 		if d.DockerDeploy != nil {
 			localDeploy = true

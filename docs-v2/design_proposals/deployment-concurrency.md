@@ -85,10 +85,10 @@ The scheduler validates dependency indexes and resolved order before deployment.
 Kubernetes deployers currently share one status monitor per kube-context.
 Concurrent configurations would therefore wait on each other's resources.
 
-When the concurrency limit can exceed one, key status monitors by kube-context
-plus an in-memory configuration scope. Each deployer registers its deployed
-manifests with that monitor, which limits status checks to those resource
-identities. No configuration identity is written to deployed resources.
+Key status monitors by kube-context plus an in-memory configuration scope. Each
+deployer registers its deployed manifests with that monitor, which limits status
+checks to those resource identities. No configuration identity is written to
+deployed resources.
 Deployers within one configuration share the same monitor. Port forwarding
 continues selecting the command-wide run ID.
 

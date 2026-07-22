@@ -429,7 +429,7 @@ func TestGetDeployerStatusMonitorScopes(tOuter *testing.T) {
 		concurrency int
 		wantScopes  []string
 	}{
-		{name: "serial", concurrency: 1, wantScopes: []string{"", ""}},
+		{name: "serial", concurrency: 1, wantScopes: []string{"config-a", "config-b"}},
 		{name: "concurrent", concurrency: 2, wantScopes: []string{"config-a", "config-b"}},
 	}
 	for _, test := range tests {
