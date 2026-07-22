@@ -62,21 +62,14 @@ order when the concurrency limit is one.
 
 Model deployment scheduling on the build scheduler:
 
-1. Start one goroutine per resolved configuration.
-2. Wait for every direct prerequisite to complete.
-3. Acquire a bounded concurrency permit.
-4. Run the configuration's deployers in their existing order.
-5. Publish completion to dependent configurations.
-6. Cancel remaining work after the first failure.
-
-Acquire the permit after dependency waits. Otherwise blocked dependents can
-consume every permit and deadlock their prerequisites. With a concurrency
-limit of one, each configuration also waits for the preceding resolved
-configuration to preserve deterministic serial order.
+1. Scan resolved configurations in order for completed prerequisites.
+2. Start ready configurations up to the concurrency limit.
+3. Run each configuration's deployers in their existing order.
+4. Publish completion and repeat the same scan.
+5. Cancel remaining work after the first failure.
 
 A node completes after the same hooks and status-check behavior observed by the
-existing `DeployerMux`. Simultaneously ready configurations have no dispatch or
-completion ordering guarantee when the concurrency limit exceeds one.
+existing `DeployerMux`.
 
 The scheduler validates dependency indexes and resolved order before deployment.
 

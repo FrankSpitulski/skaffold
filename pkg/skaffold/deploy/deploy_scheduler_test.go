@@ -120,6 +120,29 @@ func TestDeployerMuxHonorsConcurrencyLimit(t *testing.T) {
 	}
 }
 
+func TestDeployerMuxSchedulesInOrderAtConcurrencyOne(t *testing.T) {
+	initializeDeployEvents()
+	var started []string
+	var deployers []Deployer
+	for _, name := range []string{"a", "b", "c"} {
+		deployers = append(deployers, newControlledDeployer(name, func(context.Context, io.Writer) error {
+			started = append(started, name)
+			return nil
+		}))
+	}
+	deployer, err := NewConcurrentDeployerMux(deployers, []string{"a", "b", "c"}, nil, false, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := deployer.Deploy(context.Background(), io.Discard, nil, manifest.NewManifestListByConfig()); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(started, ","); got != "a,b,c" {
+		t.Fatalf("deployment order = %q, want %q", got, "a,b,c")
+	}
+}
+
 func TestDeployerMuxIsWorkConserving(t *testing.T) {
 	initializeDeployEvents()
 	ctx, cancel := context.WithCancel(context.Background())

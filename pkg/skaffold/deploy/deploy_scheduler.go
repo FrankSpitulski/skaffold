@@ -71,11 +71,6 @@ func NewConcurrentDeployerMux(deployers []Deployer, orderedConfigs []string, dep
 	if concurrency == 0 || concurrency > len(configs) {
 		concurrency = max(1, len(configs))
 	}
-	if concurrency == 1 {
-		for index := 1; index < len(configs); index++ {
-			configs[index].dependencies = append(configs[index].dependencies, index-1)
-		}
-	}
 
 	return DeployerMux{
 		iterativeStatusCheck: iterativeStatusCheck,
@@ -87,36 +82,52 @@ func NewConcurrentDeployerMux(deployers []Deployer, orderedConfigs []string, dep
 
 func (m DeployerMux) Deploy(ctx context.Context, w io.Writer, artifacts []graph.Artifact, manifests manifest.ManifestListByConfig) error {
 	w = output.SynchronizeWriter(w)
-	completed := make([]chan struct{}, len(m.configs))
-	for index := range completed {
-		completed[index] = make(chan struct{})
-	}
-
-	semaphore := make(chan struct{}, m.concurrency)
 	group, groupCtx := errgroup.WithContext(ctx)
-	for index, config := range m.configs {
-		group.Go(func() error {
+	completed := make([]bool, len(m.configs))
+	started := make([]bool, len(m.configs))
+	finished := make(chan int)
+	running := 0
+	for completedCount := 0; completedCount < len(m.configs); {
+		for index, config := range m.configs {
+			if running == m.concurrency {
+				break
+			}
+			if started[index] {
+				continue
+			}
+			ready := true
 			for _, dependency := range config.dependencies {
+				if !completed[dependency] {
+					ready = false
+					break
+				}
+			}
+			if !ready {
+				continue
+			}
+			started[index] = true
+			running++
+			group.Go(func() error {
+				if err := m.deployConfig(groupCtx, w, artifacts, manifests, config); err != nil {
+					return err
+				}
 				select {
 				case <-groupCtx.Done():
 					return groupCtx.Err()
-				case <-completed[dependency]:
+				case finished <- index:
+					return nil
 				}
-			}
+			})
+		}
 
-			select {
-			case <-groupCtx.Done():
-				return groupCtx.Err()
-			case semaphore <- struct{}{}:
-			}
-			defer func() { <-semaphore }()
-
-			if err := m.deployConfig(groupCtx, w, artifacts, manifests, config); err != nil {
-				return err
-			}
-			close(completed[index])
-			return nil
-		})
+		select {
+		case <-groupCtx.Done():
+			return group.Wait()
+		case index := <-finished:
+			completed[index] = true
+			completedCount++
+			running--
+		}
 	}
 	return group.Wait()
 }
