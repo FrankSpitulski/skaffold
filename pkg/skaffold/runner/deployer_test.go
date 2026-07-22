@@ -423,6 +423,37 @@ func TestGetDeployer(tOuter *testing.T) {
 	})
 }
 
+func TestGetDeployerStatusMonitorScopes(tOuter *testing.T) {
+	tests := []struct {
+		name        string
+		concurrency int
+		wantScopes  []string
+	}{
+		{name: "serial", concurrency: 1, wantScopes: []string{"", ""}},
+		{name: "concurrent", concurrency: 2, wantScopes: []string{"config-a", "config-b"}},
+	}
+	for _, test := range tests {
+		testutil.Run(tOuter, test.name, func(t *testutil.T) {
+			var scopes []string
+			t.Override(&component.NewMonitor, func(cfg k8sstatus.Config, _ string, _ *label.DefaultLabeller, _ *[]string, _ []manifest.GroupKindSelector) k8sstatus.Monitor {
+				scopes = append(scopes, cfg.StatusCheckScope())
+				return &k8sstatus.NoopMonitor{}
+			})
+			pipelines := map[string]latest.Pipeline{
+				"config-a": {Deploy: latest.DeployConfig{DeployType: latest.DeployType{KubectlDeploy: &latest.KubectlDeploy{}}}},
+				"config-b": {Deploy: latest.DeployConfig{DeployType: latest.DeployType{KubectlDeploy: &latest.KubectlDeploy{}}}},
+			}
+			_, err := GetDeployer(context.Background(), &runcontext.RunContext{
+				Opts:      config.SkaffoldOptions{DeployConcurrency: config.NewIntOrUndefined(&test.concurrency)},
+				Pipelines: runcontext.NewPipelines(pipelines, []string{"config-a", "config-b"}),
+			}, &label.DefaultLabeller{}, "", false)
+
+			t.CheckNoError(err)
+			t.CheckDeepEqual(test.wantScopes, scopes)
+		})
+	}
+}
+
 func TestGetDefaultDeployer(tOuter *testing.T) {
 	testutil.Run(tOuter, "TestGetDeployer", func(t *testutil.T) {
 		t.Override(&component.NewAccessor, func(portforward.Config, string, *pkgkubectl.CLI, kubernetes.PodSelector, label.Config, *[]string) access.Accessor {

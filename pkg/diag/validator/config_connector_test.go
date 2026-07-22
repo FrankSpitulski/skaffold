@@ -154,6 +154,6 @@ func TestConfigConnectorValidator(t *testing.T) {
 }
 
 func TestNamedResourceOptions(t *testing.T) {
-	got := namedResourceOptions(metav1.ListOptions{LabelSelector: "skaffold.dev/config=config"}, "resource")
+	got := namedResourceOptions(metav1.ListOptions{LabelSelector: "skaffold.dev/run-id=run"}, "resource")
 	testutil.CheckDeepEqual(t, metav1.ListOptions{FieldSelector: "metadata.name=resource"}, got)
 }

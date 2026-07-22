@@ -35,6 +35,7 @@ import (
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/diag"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/diag/validator"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/deploy/label"
+	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/kubernetes/manifest"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/kubernetes/status/resource"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/runner/runcontext"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/schema/latest"
@@ -51,6 +52,7 @@ func TestGetDeployments(t *testing.T) {
 	tests := []struct {
 		description string
 		deps        []*appsv1.Deployment
+		resources   map[deployedResource]struct{}
 		expected    []*resource.Resource
 		shouldErr   bool
 	}{
@@ -150,6 +152,29 @@ func TestGetDeployments(t *testing.T) {
 			},
 		},
 		{
+			description: "deployment outside internal status-check scope",
+			deps: []*appsv1.Deployment{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "dep1",
+						Namespace: "test",
+						Labels:    map[string]string{label.RunIDLabel: labeller.GetRunID()},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "dep2",
+						Namespace: "test",
+						Labels:    map[string]string{label.RunIDLabel: labeller.GetRunID()},
+					},
+				},
+			},
+			resources: map[deployedResource]struct{}{{kind: "Deployment", namespace: "test", name: "dep1"}: {}},
+			expected: []*resource.Resource{
+				resource.NewResource("dep1", resource.ResourceTypes.Deployment, "test", 200*time.Second, false),
+			},
+		},
+		{
 			description: "no deployments",
 			expected:    []*resource.Resource{},
 		},
@@ -222,12 +247,26 @@ func TestGetDeployments(t *testing.T) {
 				objs[i] = dep
 			}
 			client := fakekubeclientset.NewSimpleClientset(objs...)
-			actual, err := getDeployments(context.Background(), client, "test", labeller, 200*time.Second, false)
+			actual, err := getDeployments(context.Background(), client, "test", labeller, test.resources, 200*time.Second, false)
 			t.CheckErrorAndDeepEqual(test.shouldErr, err, &test.expected, &actual,
 				cmp.AllowUnexported(resource.Resource{}, resource.Status{}),
 				cmpopts.IgnoreInterfaces(struct{ diag.Diagnose }{}))
 		})
 	}
+}
+
+func TestDeployedResourcesUseRegistrationNamespace(t *testing.T) {
+	monitor := &monitor{}
+	monitor.deployedResources = make(map[deployedResource]struct{})
+	monitor.RegisterDeployManifests(manifest.ManifestList{[]byte(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+`)}, "release-ns")
+
+	testutil.CheckDeepEqual(t, true, resourceAllowed(monitor.deployedResources, "Deployment", "release-ns", "app"))
+	testutil.CheckDeepEqual(t, false, resourceAllowed(monitor.deployedResources, "Deployment", "default", "app"))
 }
 
 func TestGetDeployStatus(t *testing.T) {

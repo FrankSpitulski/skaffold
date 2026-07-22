@@ -104,7 +104,7 @@ type Deployer struct {
 	debugger      debug.Debugger
 	imageLoader   loader.ImageLoader
 	logger        log.Logger
-	statusMonitor status.Monitor
+	statusMonitor kstatus.Monitor
 	syncer        sync.Syncer
 	hookRunner    hooks.Runner
 
@@ -353,6 +353,10 @@ func (h *Deployer) Deploy(ctx context.Context, out io.Writer, builds []graph.Art
 				if err != nil {
 					return helm.UserErr(fmt.Sprintf("cannot expand release name %q", release.Name), err)
 				}
+				releaseNamespace, err := helm.ReleaseNamespace(h.namespace, release)
+				if err != nil {
+					return err
+				}
 
 				m, results, err := h.deployRelease(levelCtx, out, releaseName, release, builds, h.helmVersion, chartVersion, repo)
 				if err != nil {
@@ -362,6 +366,11 @@ func (h *Deployer) Deploy(ctx context.Context, out io.Writer, builds []graph.Art
 				mu.Lock()
 				defer mu.Unlock()
 				manifests.Append(m)
+				if len(m) != 0 {
+					deployedManifests := manifest.ManifestList{}
+					deployedManifests.Append(m)
+					h.statusMonitor.RegisterDeployManifests(deployedManifests, releaseNamespace)
+				}
 				for _, res := range results {
 					if trimmed := strings.TrimSpace(res.Namespace); trimmed != "" {
 						nsMap[trimmed] = struct{}{}

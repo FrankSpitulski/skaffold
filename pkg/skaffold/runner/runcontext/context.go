@@ -252,6 +252,8 @@ func (rc *RunContext) StatusCheckCRDsFile() string {
 	return rc.Opts.StatusCheckSelectorsFile
 }
 
+func (rc *RunContext) StatusCheckScope() string { return "" }
+
 func (rc *RunContext) SkipTests() bool {
 	return rc.Opts.SkipTests
 }

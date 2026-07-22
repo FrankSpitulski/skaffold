@@ -30,7 +30,8 @@ import (
 
 type mockStatusConfig struct {
 	k8sstatus.Config
-	statusCheck *bool
+	statusCheck      *bool
+	statusCheckScope string
 }
 
 func (m mockStatusConfig) StatusCheck() *bool { return m.statusCheck }
@@ -42,6 +43,8 @@ func (m mockStatusConfig) StatusCheckDeadlineSeconds() int { return 0 }
 func (m mockStatusConfig) StatusCheckTolerateFailures() bool { return false }
 
 func (m mockStatusConfig) FastFailStatusCheck() bool { return true }
+
+func (m mockStatusConfig) StatusCheckScope() string { return m.statusCheckScope }
 
 func (m mockStatusConfig) Muted() config.Muted { return config.Muted{} }
 
@@ -83,13 +86,15 @@ func TestMonitorIsolationByConfig(t *testing.T) {
 
 		cfg := mockStatusConfig{}
 		namespaces := []string{}
-		base := label.NewLabeller(true, nil, "run-123")
-		configA := NewMonitor(cfg, "context-a", base.WithConfigID("config-a"), &namespaces, nil)
-		configAAgain := NewMonitor(cfg, "context-a", base.WithConfigID("config-a"), &namespaces, nil)
+		labeller := label.NewLabeller(true, nil, "run-123")
+		cfg.statusCheckScope = "config-a"
+		configA := NewMonitor(cfg, "context-a", labeller, &namespaces, nil)
+		configAAgain := NewMonitor(cfg, "context-a", labeller, &namespaces, nil)
 		if configA != configAAgain {
 			t.Error("monitors for the same configuration should be shared")
 		}
-		configB := NewMonitor(cfg, "context-a", base.WithConfigID("config-b"), &namespaces, nil)
+		cfg.statusCheckScope = "config-b"
+		configB := NewMonitor(cfg, "context-a", labeller, &namespaces, nil)
 		if configA == configB {
 			t.Error("monitors for different configurations should be distinct")
 		}

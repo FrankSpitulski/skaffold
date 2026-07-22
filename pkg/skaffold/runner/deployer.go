@@ -47,7 +47,8 @@ var DefaultStatusCheckDeadline = 10 * time.Minute
 // deployerCtx encapsulates a given skaffold run context along with additional deployer constructs.
 type deployerCtx struct {
 	*runcontext.RunContext
-	deploy latest.DeployConfig
+	deploy           latest.DeployConfig
+	statusCheckScope string
 }
 
 func (d *deployerCtx) GetKubeContext() string {
@@ -70,6 +71,10 @@ func (d *deployerCtx) StatusCheck() *bool {
 // JsonParseType returns the JsonParseType field from the underlying deployConfig struct
 func (d *deployerCtx) JSONParseConfig() latest.JSONParseConfig {
 	return d.deploy.Logs.JSONParse
+}
+
+func (d *deployerCtx) StatusCheckScope() string {
+	return d.statusCheckScope
 }
 
 // GetDeployer creates a deployer from a given RunContext and deploy pipeline definitions.
@@ -144,14 +149,13 @@ func GetDeployer(ctx context.Context, runCtx *runcontext.RunContext, labeller *l
 	remoteDeploy := false
 	orderedConfigs := pipelines.AllOrderedConfigNames()
 	deployConcurrency := runCtx.DeployConcurrency()
-	for configIndex, configName := range orderedConfigs {
+	for _, configName := range orderedConfigs {
 		pl := pipelines.GetForConfigName(configName)
 		d := pl.Deploy
 		r := pl.Render
-		dCtx := &deployerCtx{runCtx, d}
-		configLabeller := labeller
+		dCtx := &deployerCtx{RunContext: runCtx, deploy: d}
 		if deployConcurrency != 1 && len(orderedConfigs) > 1 {
-			configLabeller = labeller.WithConfigID(strconv.Itoa(configIndex))
+			dCtx.statusCheckScope = configName
 		}
 
 		if d.DockerDeploy != nil {
@@ -177,7 +181,7 @@ func GetDeployer(ctx context.Context, runCtx *runcontext.RunContext, labeller *l
 				d.LegacyHelmDeploy.Releases = r.Helm.Releases
 				d.LegacyHelmDeploy.Flags = r.Helm.Flags
 			}
-			h, err := helm.NewDeployer(ctx, dCtx, configLabeller, d.LegacyHelmDeploy, runCtx.Artifacts(), configName, gks)
+			h, err := helm.NewDeployer(ctx, dCtx, labeller, d.LegacyHelmDeploy, runCtx.Artifacts(), configName, gks)
 			if err != nil {
 				return nil, err
 			}
@@ -185,7 +189,7 @@ func GetDeployer(ctx context.Context, runCtx *runcontext.RunContext, labeller *l
 		}
 
 		if d.KubectlDeploy != nil {
-			deployer, err := kubectl.NewDeployer(dCtx, configLabeller, d.KubectlDeploy, runCtx.Artifacts(), configName, gks)
+			deployer, err := kubectl.NewDeployer(dCtx, labeller, d.KubectlDeploy, runCtx.Artifacts(), configName, gks)
 			if err != nil {
 				return nil, err
 			}
@@ -296,7 +300,7 @@ func getDefaultDeployer(runCtx *runcontext.RunContext, labeller *label.DefaultLa
 		Flags:            *kFlags,
 		DefaultNamespace: defaultNamespace,
 	}
-	dCtx := &deployerCtx{runCtx, latest.DeployConfig{StatusCheck: statusCheck, KubeContext: kubeContext, DeployType: latest.DeployType{KubectlDeploy: k}}}
+	dCtx := &deployerCtx{RunContext: runCtx, deploy: latest.DeployConfig{StatusCheck: statusCheck, KubeContext: kubeContext, DeployType: latest.DeployType{KubectlDeploy: k}}}
 	defaultDeployer, err := kubectl.NewDeployer(dCtx, labeller, k, runCtx.Artifacts(), "", selectors)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating default kubectl deployer: %w", err)

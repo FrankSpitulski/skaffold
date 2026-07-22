@@ -85,10 +85,12 @@ The scheduler validates dependency indexes and resolved order before deployment.
 Kubernetes deployers currently share one status monitor per kube-context.
 Concurrent configurations would therefore wait on each other's resources.
 
-When the concurrency limit can exceed one, add an internal
-`skaffold.dev/config` label and key status monitors by kube-context plus
-configuration label. Deployers within one configuration share the same monitor.
-Port forwarding continues selecting the command-wide run ID.
+When the concurrency limit can exceed one, key status monitors by kube-context
+plus an in-memory configuration scope. Each deployer registers its deployed
+manifests with that monitor, which limits status checks to those resource
+identities. No configuration identity is written to deployed resources.
+Deployers within one configuration share the same monitor. Port forwarding
+continues selecting the command-wide run ID.
 
 Synchronize the shared deployment writer so concurrent output does not corrupt
 lines while preserving existing event context.

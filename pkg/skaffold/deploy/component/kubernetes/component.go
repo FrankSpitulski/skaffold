@@ -53,7 +53,7 @@ var (
 
 type monitorKey struct {
 	kubeContext string
-	configID    string
+	scope       string
 }
 
 func newAccessor(cfg portforward.Config, kubeContext string, cli *kubectl.CLI, podSelector kubernetes.PodSelector, labeller label.Config, namespaces *[]string) access.Accessor {
@@ -104,7 +104,7 @@ func newMonitor(cfg k8sstatus.Config, kubeContext string, labeller *label.Defaul
 	}
 	monitorLock.Lock()
 	defer monitorLock.Unlock()
-	key := monitorKey{kubeContext: kubeContext, configID: labeller.ConfigID()}
+	key := monitorKey{kubeContext: kubeContext, scope: cfg.StatusCheckScope()}
 	if k8sMonitor == nil {
 		k8sMonitor = make(map[monitorKey]k8sstatus.Monitor)
 	}
